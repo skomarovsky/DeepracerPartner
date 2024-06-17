@@ -1,23 +1,27 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def load_npy_to_dataframe(file_path, column_names=None):
+def plot_track(file_path, canvas):
     data = np.load(file_path, allow_pickle=True)
-    if column_names is None:
-        column_names = ['Waypoint_X', 'Waypoint_Y', 'Inner_X', 'Inner_Y', 'Outer_X', 'Outer_Y']
-    df = pd.DataFrame(data, columns=column_names)
-    return df
+    waypoints = data[:, 0:2]
+    plt.plot(waypoints[:, 0], waypoints[:, 1], 'o-')
+    canvas.draw()
 
 
-def export_dataframe_to_csv(df, output_path):
-    df.to_csv(output_path, index=False)
+def plot_track_segments(file_path, canvas):
+    data = np.load(file_path, allow_pickle=True)
+    waypoints = data[:, 0:2]
+    straight_segments, left_turns, right_turns = classify_segments_revised(waypoints)
 
+    for segment in straight_segments:
+        plt.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'g-')
+    for segment in left_turns:
+        plt.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'b-')
+    for segment in right_turns:
+        plt.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'r-')
 
-def generate_csv_from_npy(file_path, output_path, column_names=None):
-    df = load_npy_to_dataframe(file_path, column_names)
-    export_dataframe_to_csv(df, output_path)
+    canvas.draw()
 
 
 def classify_segments_revised(waypoints, angle_threshold=7):
@@ -30,7 +34,6 @@ def classify_segments_revised(waypoints, angle_threshold=7):
         prev_point = waypoints[i]
         curr_point = waypoints[i + 1]
 
-        # Calculate vectors
         if i + 2 < len(waypoints):
             next_point = waypoints[i + 2]
         else:
@@ -39,126 +42,42 @@ def classify_segments_revised(waypoints, angle_threshold=7):
         vector1 = np.array(curr_point) - np.array(prev_point)
         vector2 = np.array(next_point) - np.array(curr_point)
 
-        # Calculate the angle between vectors
-        angle = np.degrees(np.arccos(
-            np.clip(np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2)), -1.0, 1.0)))
+        if np.linalg.norm(vector1) == 0 or np.linalg.norm(vector2) == 0:
+            angle = 0
+        else:
+            angle = np.degrees(np.arccos(
+                np.clip(np.dot(vector1, vector2) / (np.linalg.norm(vector1) * np.linalg.norm(vector2)), -1.0, 1.0)))
 
-        if angle >= angle_threshold:  # Threshold for considering a segment as a turn
-            # Determine turn direction using the 2D cross product
+        if angle >= angle_threshold:
             cross_product = vector1[0] * vector2[1] - vector1[1] * vector2[0]
             if cross_product > 0:
                 left_turns.append((prev_point.tolist(), curr_point.tolist()))
             else:
                 right_turns.append((prev_point.tolist(), curr_point.tolist()))
-            i += 1  # Move to the next point after a turn
+            i += 1
         else:
             straight_segments.append((prev_point.tolist(), curr_point.tolist()))
-            i += 1  # Move to the next point after a straight segment
+            i += 1
 
     return straight_segments, left_turns, right_turns
 
 
-def analyze_and_update_segments(file_path):
-    df = load_npy_to_dataframe(file_path)
-    waypoints = df[['Waypoint_X', 'Waypoint_Y']].values
-    straight_segments, left_turns, right_turns = classify_segments_revised(waypoints)
-
-    segment_types = []
-    for i in range(len(waypoints) - 1):
-        prev_point = waypoints[i]
-        curr_point = waypoints[i + 1]
-        if [prev_point.tolist(), curr_point.tolist()] in [seg for seg in straight_segments]:
-            segment_types.append('Straight')
-        elif [prev_point.tolist(), curr_point.tolist()] in [seg for seg in left_turns]:
-            segment_types.append('Left Turn')
-        else:
-            segment_types.append('Right Turn')
-
-    df['Segment_Type'] = segment_types + ['Straight']  # Append 'Straight' for the last point
-
-    return df
-
-
-def plot_track(file_path, canvas=None):
-    column_names = ['Waypoint_X', 'Waypoint_Y', 'Inner_X', 'Inner_Y', 'Outer_X', 'Outer_Y']
-    df = load_npy_to_dataframe(file_path, column_names)
-
-    # Extract waypoints, inner boundary, outer boundary, and center line
-    waypoints = df[['Waypoint_X', 'Waypoint_Y']].values
-    inner_boundary = df[['Inner_X', 'Inner_Y']].values
-    outer_boundary = df[['Outer_X', 'Outer_Y']].values
-    center_line = (inner_boundary + outer_boundary) / 2
-
-    # Plot the track
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.plot(waypoints[:, 0], waypoints[:, 1], label='Waypoints')
-    ax.plot(inner_boundary[:, 0], inner_boundary[:, 1], label='Inner Boundary')
-    ax.plot(outer_boundary[:, 0], outer_boundary[:, 1], label='Outer Boundary')
-    ax.plot(center_line[:, 0], center_line[:, 1], 'r--', label='Center Line')
-
-    # Highlight start and end points
-    ax.scatter(waypoints[0, 0], waypoints[0, 1], color='green', label='Start', s=100)
-    ax.scatter(waypoints[-1, 0], waypoints[-1, 1], color='red', label='End', s=100)
-
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-    ax.legend()
-    ax.set_title(f'DeepRacer Track: {file_path.split("/")[-1]}')
-
-    if canvas:
-        canvas.figure = fig
-        canvas.draw()
-    else:
-        plt.show()
-
-
-def plot_track_segments(file_path, canvas=None):
-    df = analyze_and_update_segments(file_path)
-    waypoints = df[['Waypoint_X', 'Waypoint_Y']].values
-    inner_boundary = df[['Inner_X', 'Inner_Y']].values
-    outer_boundary = df[['Outer_X', 'Outer_Y']].values
-    center_line = (inner_boundary + outer_boundary) / 2
-
-    # Classify segments
-    straight_segments, left_turns, right_turns = classify_segments_revised(waypoints)
-
-    # Plot the track
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.plot(waypoints[:, 0], waypoints[:, 1], label='Waypoints')
-    ax.plot(inner_boundary[:, 0], inner_boundary[:, 1], label='Inner Boundary')
-    ax.plot(outer_boundary[:, 0], outer_boundary[:, 1], label='Outer Boundary')
-    ax.plot(center_line[:, 0], center_line[:, 1], 'r--', label='Center Line')
-
-    # Plot segments with different colors
-    for segment in straight_segments:
-        ax.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'g-', linewidth=2)
-    for segment in left_turns:
-        ax.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'b-', linewidth=2)
-    for segment in right_turns:
-        ax.plot([segment[0][0], segment[1][0]], [segment[0][1], segment[1][1]], 'r-', linewidth=2)
-
-    # Highlight start and end points
-    ax.scatter(waypoints[0, 0], waypoints[0, 1], color='green', label='Start', s=100)
-    ax.scatter(waypoints[-1, 0], waypoints[-1, 1], color='red', label='End', s=100)
-
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-    ax.legend()
-    ax.set_title(f'DeepRacer Track Segments: {file_path.split("/")[-1]}')
-    ax.grid(True)
-
-    if canvas:
-        canvas.figure = fig
-        canvas.draw()
-    else:
-        plt.show()
-
-
 def save_track_to_csv(file_path, output_path):
-    df = load_npy_to_dataframe(file_path)
-    export_dataframe_to_csv(df, output_path)
+    data = np.load(file_path, allow_pickle=True)
+    np.savetxt(output_path, data, delimiter=",")
 
 
 def save_segments_to_csv(file_path, output_path):
-    df = analyze_and_update_segments(file_path)
-    export_dataframe_to_csv(df, output_path)
+    data = np.load(file_path, allow_pickle=True)
+    waypoints = data[:, 0:2]
+    straight_segments, left_turns, right_turns = classify_segments_revised(waypoints)
+
+    with open(output_path, 'w') as f:
+        f.write('Segment Type,Start Point X,Start Point Y,End Point X,End Point Y\n')
+
+        for segment in straight_segments:
+            f.write(f'Straight,{segment[0][0]},{segment[0][1]},{segment[1][0]},{segment[1][1]}\n')
+        for segment in left_turns:
+            f.write(f'Left Turn,{segment[0][0]},{segment[0][1]},{segment[1][0]},{segment[1][1]}\n')
+        for segment in right_turns:
+            f.write(f'Right Turn,{segment[0][0]},{segment[0][1]},{segment[1][0]},{segment[1][1]}\n')

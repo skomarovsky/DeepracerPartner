@@ -23,19 +23,15 @@ class DeepRacerPartnerApp:
         self.file_menu = Menu(self.menu)
         self.menu.add_cascade(label="File", menu=self.file_menu)
         self.file_menu.add_command(label="Open Track", command=self.open_file)
-        self.export_track_menu = self.file_menu.add_command(label="Export Track to CSV", command=self.export_track,
-                                                            state='disabled')
-        self.export_segments_menu = self.file_menu.add_command(label="Export Segments to CSV",
-                                                               command=self.export_segments, state='disabled')
+        self.file_menu.add_command(label="Export Track to CSV", command=self.export_track, state='disabled')
+        self.file_menu.add_command(label="Export Segments to CSV", command=self.export_segments, state='disabled')
         self.file_menu.add_command(label="Exit", command=self.exit_app)
 
         # Action menu
         self.action_menu = Menu(self.menu)
         self.menu.add_cascade(label="Action", menu=self.action_menu)
-        self.show_segments_menu = self.action_menu.add_command(label="Show Segments", command=self.show_segments,
-                                                               state='disabled')
-        self.hide_segments_menu = self.action_menu.add_command(label="Hide Segments", command=self.hide_segments,
-                                                               state='disabled')
+        self.action_menu.add_command(label="Show Segments", command=self.show_segments, state='disabled')
+        self.action_menu.add_command(label="Hide Segments", command=self.hide_segments, state='disabled')
 
         # Help menu
         help_menu = Menu(self.menu)
@@ -46,20 +42,11 @@ class DeepRacerPartnerApp:
         self.bg_canvas = tk.Canvas(root, width=1024, height=768)
         self.bg_canvas.pack(fill="both", expand=True)
 
-        # Create a canvas for plotting
-        self.plot_canvas = tk.Canvas(root, width=1024, height=768, bg='white')
-        self.plot_canvas.pack(fill="both", expand=True)
-
-        # Place plot canvas above the background canvas
-        self.plot_canvas.lift(self.bg_canvas)
-
         # Load and display the background image
         self.show_background_image()
 
-        # Placeholder for plot
-        self.figure, self.ax = plt.subplots(figsize=(10, 10))
-        self.plot_widget = FigureCanvasTkAgg(self.figure, master=self.plot_canvas)
-        self.plot_widget.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        # Placeholder for plot canvas
+        self.plot_canvas = None
 
         # Track resizing
         self.root.bind('<Configure>', self.on_resize)
@@ -71,57 +58,59 @@ class DeepRacerPartnerApp:
 
     def on_resize(self, event):
         self.update_background_image(event.width, event.height)
-        if hasattr(self, 'plot_widget'):
-            self.plot_widget.get_tk_widget().config(width=event.width, height=event.height)
+        if self.plot_canvas:
+            self.plot_canvas.get_tk_widget().config(width=event.width, height=event.height)
 
     def update_background_image(self, width, height):
         resized_image = self.bg_image_original.resize((width, height), Image.LANCZOS)
         self.bg_image = ImageTk.PhotoImage(resized_image)
         self.bg_canvas.itemconfig(self.bg_image_id, image=self.bg_image)
 
-    def create_plot(self):
-        if hasattr(self, 'plot_widget'):
-            self.plot_widget.get_tk_widget().destroy()
+    def create_plot_canvas(self):
+        if self.plot_canvas:
+            self.plot_canvas.get_tk_widget().destroy()
         self.figure, self.ax = plt.subplots(figsize=(10, 10))
-        self.plot_widget = FigureCanvasTkAgg(self.figure, master=self.plot_canvas)
-        self.plot_widget.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self.plot_canvas = FigureCanvasTkAgg(self.figure, master=self.bg_canvas)
+        self.plot_widget = self.plot_canvas.get_tk_widget()
+        self.plot_widget.pack(fill=tk.BOTH, expand=True)
 
     def open_file(self):
         file_path = filedialog.askopenfilename(filetypes=[("NumPy files", "*.npy")])
         if file_path:
             self.current_file = file_path
-            self.create_plot()
+            self.create_plot_canvas()
             self.plot_track()
-            self.action_menu.entryconfig("Show Segments", state='normal')
-            self.file_menu.entryconfig(self.export_track_menu, state='normal')
-            self.file_menu.entryconfig(self.export_segments_menu, state='normal')
+            self.action_menu.entryconfig(0, state='normal')
+            self.action_menu.entryconfig(1, state='disabled')
+            self.file_menu.entryconfig(1, state='normal')
+            self.file_menu.entryconfig(2, state='normal')
 
     def plot_track(self):
         if self.current_file:
             self.ax.clear()
             self.ax.grid(True)  # Add the grid
-            du.plot_track(self.current_file, self.plot_widget)
-            self.plot_widget.draw()
+            du.plot_track(self.current_file, self.plot_canvas)
+            self.plot_canvas.draw()
 
     def show_segments(self):
         if self.current_file:
             self.ax.clear()
-            self.create_plot()  # Recreate the plot canvas for segments
+            self.create_plot_canvas()  # Recreate the plot canvas for segments
             self.ax.grid(True)  # Add the grid
-            du.plot_track_segments(self.current_file, self.plot_widget)
-            self.plot_widget.draw()
-            self.action_menu.entryconfig("Show Segments", state='disabled')
-            self.action_menu.entryconfig("Hide Segments", state='normal')
+            du.plot_track_segments(self.current_file, self.plot_canvas)
+            self.plot_canvas.draw()
+            self.action_menu.entryconfig(0, state='disabled')
+            self.action_menu.entryconfig(1, state='normal')
 
     def hide_segments(self):
         if self.current_file:
             self.ax.clear()
-            self.create_plot()  # Recreate the plot canvas for track
+            self.create_plot_canvas()  # Recreate the plot canvas for track
             self.ax.grid(True)  # Add the grid
-            du.plot_track(self.current_file, self.plot_widget)
-            self.plot_widget.draw()
-            self.action_menu.entryconfig("Show Segments", state='normal')
-            self.action_menu.entryconfig("Hide Segments", state='disabled')
+            du.plot_track(self.current_file, self.plot_canvas)
+            self.plot_canvas.draw()
+            self.action_menu.entryconfig(0, state='normal')
+            self.action_menu.entryconfig(1, state='disabled')
 
     def export_track(self):
         if self.current_file:
